@@ -179,9 +179,10 @@
 
 /* Results & Chat Messages */
 .result {
-  padding: 20px 0;
+  padding: 20px 0 32px 0;
   max-height: 65vh;
   overflow-y: auto;
+  scroll-behavior: smooth;
   display: flex;
   flex-direction: column;
   gap: 28px;

@@ -1,10 +1,15 @@
-import { useContext } from "react";
+import { useContext, useEffect, useRef } from "react";
 import { assets } from "../../assets/assets";
 import "./Main.css";
 import { Context } from "../../context/context";
 
 export default function Main() {
-  const { onSent, recentPrompt, showResult, loading, formattedResultData, setInput, input } = useContext(Context);
+  const { onSent, showResult, loading, setInput, input, messages } = useContext(Context);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   const samplePrompts = [
     {
@@ -66,30 +71,40 @@ export default function Main() {
           </>
         ) : (
           <div className="result">
-            <div className="result-title">
-              <div className="avatar-wrap user-avatar">
-                <img src={assets.user} alt="User profile" />
-              </div>
-              <p>{recentPrompt}</p>
-            </div>
+            {messages.map((msg, index) =>
+              msg.role === "user" ? (
+                <div key={msg.id || index} className="result-title">
+                  <div className="avatar-wrap user-avatar">
+                    <img src={assets.user} alt="User profile" />
+                  </div>
+                  <p>{msg.text}</p>
+                </div>
+              ) : (
+                <div key={msg.id || index} className="result-data">
+                  <div className="avatar-wrap nova-avatar">
+                    <img src={assets.nova} alt="Nova AI" />
+                  </div>
+                  <div
+                    className="formatted-content"
+                    dangerouslySetInnerHTML={{ __html: msg.html || msg.text }}
+                  />
+                </div>
+              )
+            )}
 
-            <div className="result-data">
-              <div className="avatar-wrap nova-avatar">
-                <img src={assets.nova} alt="Nova AI" />
-              </div>
-              {loading ? (
+            {loading && (
+              <div className="result-data">
+                <div className="avatar-wrap nova-avatar">
+                  <img src={assets.nova} alt="Nova AI" />
+                </div>
                 <div className="loader">
                   <div className="skeleton-bar"></div>
                   <div className="skeleton-bar short"></div>
                   <div className="skeleton-bar medium"></div>
                 </div>
-              ) : (
-                <div
-                  className="formatted-content"
-                  dangerouslySetInnerHTML={{ __html: formattedResultData }}
-                />
-              )}
-            </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
         )}
 

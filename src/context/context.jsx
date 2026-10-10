@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useEffect, useState } from "react";
+import { createContext, useState } from "react";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import formatContentToHTML from "../utils/html-formatter";
 
@@ -17,8 +17,8 @@ const genAI = new GoogleGenerativeAI(apiKey);
 const systemInstruction =
     "NOVA AI (Natural Optimized Virtual Assistant) was created by Shahe Aalam.";
 
-// Direct Gemini AI query execution (frontend-integrated, no separate backend needed)
-export const run = async (prompt) => {
+// Direct Gemini AI query execution with multi-turn chat memory
+export const run = async (prompt, history = []) => {
     try {
         if (!apiKey) {
             throw new Error("Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.");
@@ -29,7 +29,21 @@ export const run = async (prompt) => {
             systemInstruction,
         });
 
-        const result = await model.generateContent(prompt);
+        const formattedHistory = history
+            .filter((item) => item.text && item.text.trim())
+            .map((item) => ({
+                role: item.role === "assistant" || item.role === "model" ? "model" : "user",
+                parts: [{ text: item.text }],
+            }));
+
+        const chat = model.startChat({
+            history: formattedHistory,
+            generationConfig: {
+                maxOutputTokens: 2048,
+            },
+        });
+
+        const result = await chat.sendMessage(prompt);
         return result.response.text();
     } catch (err) {
         console.warn("Primary model error, attempting fallback...", err);
@@ -38,7 +52,22 @@ export const run = async (prompt) => {
                 model: "gemini-3.8-flash",
                 systemInstruction,
             });
-            const result = await fallbackModel.generateContent(prompt);
+
+            const formattedHistory = history
+                .filter((item) => item.text && item.text.trim())
+                .map((item) => ({
+                    role: item.role === "assistant" || item.role === "model" ? "model" : "user",
+                    parts: [{ text: item.text }],
+                }));
+
+            const chat = fallbackModel.startChat({
+                history: formattedHistory,
+                generationConfig: {
+                    maxOutputTokens: 2048,
+                },
+            });
+
+            const result = await chat.sendMessage(prompt);
             return result.response.text();
         } catch (fallbackErr) {
             console.error("Gemini processing error:", fallbackErr);
@@ -49,61 +78,61 @@ export const run = async (prompt) => {
 
 const ContextProvider = (props) => {
     const [input, setInput] = useState("");
+    const [messages, setMessages] = useState([]);
     const [recentPrompt, setRecentPrompt] = useState("");
     const [previousPrompts, setPreviousPrompts] = useState([]);
     const [showResult, setShowResult] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [resultData, setResultData] = useState("");
     const [formattedResultData, setFormattedResultData] = useState("");
-
-    const wordToWordWriter = (index, nextWord) => {
-        setTimeout(() => {
-            setFormattedResultData(prev => prev + nextWord);
-        }, 50 * index);
-    };
 
     const newChat = () => {
         setLoading(false);
         setShowResult(false);
+        setMessages([]);
+        setRecentPrompt("");
+        setFormattedResultData("");
     };
 
     const onSent = async (prompt) => {
-        setResultData("");
-        setFormattedResultData("");
-        setLoading(true);
-        setShowResult(true);
+        const textToSend = prompt !== undefined ? prompt : input;
+        if (!textToSend || !textToSend.trim()) return;
 
-        let response;
-        if (prompt !== undefined) {
-            setRecentPrompt(prompt);
-            setPreviousPrompts(prev => prev.includes(prompt) ? prev : [...prev, prompt]);
-            response = await run(prompt);
-        } else {
-            if (!input.trim()) return;
-            const currentInput = input;
-            setPreviousPrompts(prev => [...prev, currentInput]);
-            setRecentPrompt(currentInput);
-            setInput("");
-            response = await run(currentInput);
-        }
-
-        const formattedResponse = formatContentToHTML(response);
-        setResultData(formattedResponse);
-        setLoading(false);
+        const currentPrompt = textToSend.trim();
         setInput("");
-    };
+        setRecentPrompt(currentPrompt);
+        setPreviousPrompts((prev) => (prev.includes(currentPrompt) ? prev : [...prev, currentPrompt]));
+        setShowResult(true);
+        setLoading(true);
 
-    useEffect(() => {
-        if (!resultData) return;
-        const words = resultData.split(" ");
-        words.forEach((word, index) => {
-            wordToWordWriter(index, word + " ");
-        });
-    }, [resultData]);
+        const userMessage = {
+            id: `user-${Date.now()}`,
+            role: "user",
+            text: currentPrompt,
+        };
+
+        const currentHistory = [...messages, userMessage];
+        setMessages(currentHistory);
+
+        // Send current prompt with full conversational history to Gemini
+        const responseText = await run(currentPrompt, messages);
+        const formattedResponse = formatContentToHTML(responseText);
+
+        const assistantMessage = {
+            id: `model-${Date.now()}`,
+            role: "model",
+            text: responseText,
+            html: formattedResponse,
+        };
+
+        setMessages([...currentHistory, assistantMessage]);
+        setFormattedResultData(formattedResponse);
+        setLoading(false);
+    };
 
     return (
         <Context.Provider
             value={{
+                messages,
                 previousPrompts,
                 setPreviousPrompts,
                 onSent,
