@@ -1,29 +1,49 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useState } from "react";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import formatContentToHTML from "../utils/html-formatter";
 
 export const Context = createContext();
 
-// ✅ frontend-only run function
-const run = async (prompt) => {
-    try {
-        const res = await fetch("http://localhost:3001/api/chat", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ prompt }),
-        });
+const apiKey =
+    (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY) ||
+    (typeof import.meta !== "undefined" && import.meta.env?.GEMINI_API_KEY) ||
+    (typeof process !== "undefined" && process.env?.VITE_GEMINI_API_KEY) ||
+    (typeof process !== "undefined" && process.env?.GEMINI_API_KEY) ||
+    "";
 
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => ({}));
-            throw new Error(errorData.error || `Server error (${res.status})`);
+const genAI = new GoogleGenerativeAI(apiKey);
+
+const systemInstruction =
+    "NOVA AI (Natural Optimized Virtual Assistant) was created by Shahe Aalam.";
+
+// Direct Gemini AI query execution (frontend-integrated, no separate backend needed)
+export const run = async (prompt) => {
+    try {
+        if (!apiKey) {
+            throw new Error("Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.");
         }
 
-        const data = await res.json();
-        return data.reply;
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            systemInstruction,
+        });
+
+        const result = await model.generateContent(prompt);
+        return result.response.text();
     } catch (err) {
-        console.error("Error connecting to backend server:", err);
-        return `Error: ${err.message || "Failed to fetch response. Please make sure backend server is running on http://localhost:3001"}`;
+        console.warn("Primary model error, attempting fallback...", err);
+        try {
+            const fallbackModel = genAI.getGenerativeModel({
+                model: "gemini-3.8-flash",
+                systemInstruction,
+            });
+            const result = await fallbackModel.generateContent(prompt);
+            return result.response.text();
+        } catch (fallbackErr) {
+            console.error("Gemini processing error:", fallbackErr);
+            return `Error: ${fallbackErr.message || err.message || "Failed to generate response"}`;
+        }
     }
 };
 
